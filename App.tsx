@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { searchRestaurants, YELP_MAX_RESULTS, type YelpBusiness } from './src/api/yelp';
+import { MAX_RESULTS, searchRestaurants, type Restaurant } from './src/api/places';
 import { RestaurantCard } from './src/components/RestaurantCard';
 import { RestaurantDetail } from './src/components/RestaurantDetail';
 import { SearchPanel, type SearchQuery } from './src/components/SearchPanel';
@@ -11,12 +11,11 @@ import { colors } from './src/theme';
 
 export default function App() {
   const [query, setQuery] = useState<SearchQuery | null>(null);
-  const [results, setResults] = useState<YelpBusiness[]>([]);
-  const [total, setTotal] = useState(0);
+  const [results, setResults] = useState<Restaurant[]>([]);
+  const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<YelpBusiness | null>(null);
+  const [selected, setSelected] = useState<Restaurant | null>(null);
   // Bumped on each new search so responses from a superseded search are dropped.
   const searchId = useRef(0);
 
@@ -24,14 +23,14 @@ export default function App() {
     const id = ++searchId.current;
     setQuery(q);
     setResults([]);
-    setTotal(0);
+    setTruncated(false);
     setError(null);
     setLoading(true);
     try {
-      const page = await searchRestaurants(q);
+      const result = await searchRestaurants(q);
       if (id !== searchId.current) return;
-      setResults(page.businesses);
-      setTotal(page.total);
+      setResults(result.restaurants);
+      setTruncated(result.truncated);
     } catch (e) {
       if (id === searchId.current) setError(e instanceof Error ? e.message : 'Search failed.');
     } finally {
@@ -39,50 +38,29 @@ export default function App() {
     }
   }, []);
 
-  // Yelp only pages through the first 240 matches of any search.
-  const reachable = Math.min(total, YELP_MAX_RESULTS);
-  const hasMore = results.length < reachable;
-
-  const loadMore = useCallback(async () => {
-    if (!query || loading || loadingMore || !hasMore) return;
-    const id = searchId.current;
-    setLoadingMore(true);
-    try {
-      const page = await searchRestaurants({ ...query, offset: results.length });
-      if (id !== searchId.current) return;
-      setResults((prev) => {
-        const seen = new Set(prev.map((b) => b.id));
-        return [...prev, ...page.businesses.filter((b) => !seen.has(b.id))];
-      });
-    } catch (e) {
-      if (id === searchId.current) setError(e instanceof Error ? e.message : 'Could not load more.');
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [query, loading, loadingMore, hasMore, results.length]);
-
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <StatusBar style="dark" />
         <View style={styles.titleBar}>
           <Text style={styles.title}>Nearby Eats</Text>
-          <Text style={styles.subtitle}>Restaurants around any GPS location, rated by Yelp</Text>
+          <Text style={styles.subtitle}>Restaurants around any GPS location</Text>
         </View>
 
         <FlatList
           data={results}
-          keyExtractor={(b) => b.id}
-          renderItem={({ item }) => <RestaurantCard business={item} onPress={setSelected} />}
+          keyExtractor={(r) => r.id}
+          renderItem={({ item }) => <RestaurantCard restaurant={item} onPress={setSelected} />}
           ListHeaderComponent={
             <>
               <SearchPanel searching={loading} onSearch={runSearch} />
               {query && !loading && !error && (
                 <Text style={styles.count}>
-                  {total === 0
-                    ? 'No restaurants found in this area.'
-                    : `${total.toLocaleString()} restaurant${total === 1 ? '' : 's'} found` +
-                      (total > YELP_MAX_RESULTS ? ` (Yelp shows the top ${YELP_MAX_RESULTS})` : '')}
+                  {results.length === 0
+                    ? 'No restaurants found in this area. Try a larger radius.'
+                    : truncated
+                      ? `Showing the ${MAX_RESULTS} closest restaurants. Use a smaller radius to narrow it down.`
+                      : `${results.length} restaurant${results.length === 1 ? '' : 's'} found`}
                 </Text>
               )}
             </>
@@ -99,23 +77,13 @@ export default function App() {
             ) : null
           }
           ListFooterComponent={
-            results.length > 0 ? (
-              loadingMore ? (
-                <ActivityIndicator style={styles.spinner} color={colors.primary} />
-              ) : error ? (
-                <Text style={styles.error}>{error}</Text>
-              ) : !hasMore ? (
-                <Text style={styles.hint}>That's everything Yelp returned for this area.</Text>
-              ) : null
-            ) : null
+            results.length > 0 ? <Text style={styles.hint}>Data © OpenStreetMap contributors</Text> : null
           }
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.6}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.list}
         />
 
-        <RestaurantDetail business={selected} onClose={() => setSelected(null)} />
+        <RestaurantDetail restaurant={selected} onClose={() => setSelected(null)} />
       </SafeAreaView>
     </SafeAreaProvider>
   );

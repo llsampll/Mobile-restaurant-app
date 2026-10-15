@@ -2,7 +2,7 @@ import * as Location from 'expo-location';
 import { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { YELP_MAX_RADIUS_METERS, type SortBy } from '../api/yelp';
+import type { SortBy } from '../api/places';
 import { colors } from '../theme';
 import { parseCoordinate } from '../utils/format';
 
@@ -13,12 +13,11 @@ export interface SearchQuery {
   sortBy: SortBy;
 }
 
-const RADIUS_MILES = [1, 3, 5, 10, 25];
+// Kept modest: large radii in dense cities make the free map server slow.
+const RADIUS_MILES = [0.5, 1, 2, 5, 10];
 const SORTS: { value: SortBy; label: string }[] = [
-  { value: 'best_match', label: 'Best match' },
-  { value: 'rating', label: 'Rating' },
   { value: 'distance', label: 'Distance' },
-  { value: 'review_count', label: 'Most reviewed' },
+  { value: 'name', label: 'Name' },
 ];
 
 interface Props {
@@ -30,12 +29,12 @@ export function SearchPanel({ searching, onSearch }: Props) {
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
   const [address, setAddress] = useState('');
-  const [radiusMiles, setRadiusMiles] = useState(5);
-  const [sortBy, setSortBy] = useState<SortBy>('best_match');
+  const [radiusMiles, setRadiusMiles] = useState(1);
+  const [sortBy, setSortBy] = useState<SortBy>('distance');
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const radiusMeters = Math.min(radiusMiles * 1609.344, YELP_MAX_RADIUS_METERS);
+  const radiusMeters = radiusMiles * 1609.344;
 
   function submit(latitude: number, longitude: number) {
     setError(null);
